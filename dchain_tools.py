@@ -589,7 +589,7 @@ def retrieve_rxn_xs_from_lib(libfile,target,reaction=None,product=None):
                     elif entry_li == 1 or entry_li == 2: # skip descriptive lines
                         continue
                     else:
-                        xs_vals += [np.float(xsi) for xsi in line.replace('\n','').split()]
+                        xs_vals += [float(xsi) for xsi in line.replace('\n','').split()]
 
                     if len(xs_vals) == nEbins:
                         if len(xs_data_raw)==0: # need to initialize entry
@@ -1439,10 +1439,10 @@ def parse_DCS_file_from_DCHAIN(filepath,relevancy_threshold=0.01,print_progress=
                 print('found weird beam condition')
         elif ' --- output time' in line:
             ntsteps += 1
-            t = np.float(line[39:53])
+            t = float(line[39:53])
             wtimes.append(t)
             if 'after the last shutdown:' in line and not end_irr_time_located:
-                taeoi_val = np.float(line[88:97])
+                taeoi_val = float(line[88:97])
                 taeoi_unit = line[99]
                 taeoi = taeoi_val*(time_str_to_sec_multiplier(taeoi_unit))
                 end_of_irradiation_time = t - taeoi
@@ -1528,7 +1528,7 @@ def parse_DCS_file_from_DCHAIN(filepath,relevancy_threshold=0.01,print_progress=
             ri = find(int(line[12:19]),reg_nos)
             continue
         elif ' --- output time' in line: # entering new time step
-            t = np.float(line[39:53])
+            t = float(line[39:53])
             ti = find(t,wtimes)
             ni = -1 # reset nuclide index
             continue
@@ -1544,7 +1544,7 @@ def parse_DCS_file_from_DCHAIN(filepath,relevancy_threshold=0.01,print_progress=
                 chn_indx[ri,ti,ni].append(ci)
             col_vals = line[25:92].strip().split()
             for vi in range(len(col_vals)):
-                inventory[ri,ti,ni,ci,vi] = np.float(col_vals[vi])
+                inventory[ri,ti,ni,ci,vi] = float(col_vals[vi])
             chln = 1 + line.count(')->')
             l_chains[ri,ti,ni,ci] = chln
             for li in range(chln):
@@ -1568,7 +1568,7 @@ def parse_DCS_file_from_DCHAIN(filepath,relevancy_threshold=0.01,print_progress=
                 if len(line[vci1:vci2].strip())==0:
                     val = 0
                 else:
-                    val = np.float(line[vci1:vci2])
+                    val = float(line[vci1:vci2])
                 link_dN_info[ri,ti,ni,ci,li,vi] = val
 
 
@@ -1734,7 +1734,7 @@ def parse_dtrk_file(path_to_dtrk_file,return_metadata=False):
                 in_flux_lines = True
                 continue
             if in_flux_lines:
-                flux[ri,ei,:] = [np.float(x) for x in line.split()]
+                flux[ri,ei,:] = [float(x) for x in line.split()]
                 flux[ri,ei,3] = flux[ri,ei,3]*flux[ri,ei,2] # convert relative error to absolute error
                 ei += 1
                 if ei == nEbins:
@@ -1755,8 +1755,8 @@ def parse_dtrk_file(path_to_dtrk_file,return_metadata=False):
                 vals = line.split()
                 ri = int(vals[0])-1
                 ei = int(vals[1])-1
-                fval = np.float(vals[2])
-                ferr = np.float(vals[3])
+                fval = float(vals[2])
+                ferr = float(vals[3])
 
                 flux[ri,ei,0] = ebins[ei]
                 flux[ri,ei,1] = ebins[ei+1]
@@ -1872,8 +1872,8 @@ def parse_dyld_files(path_to_dyld_file,iredufmt=None):
             ri = int(vals[0]) - 1
             zzzaaam = int(vals[1])
             ni = nuc_id_list.index(zzzaaam)
-            yields[ri,ni,0] = np.float(vals[2])
-            yields[ri,ni,1] = np.float(vals[3])*np.float(vals[2])
+            yields[ri,ni,0] = float(vals[2])
+            yields[ri,ni,1] = float(vals[3])*float(vals[2])
 
     else: # old ''traditional'' format
         # Count number of nuclides present in whole file
@@ -1944,8 +1944,8 @@ def parse_dyld_files(path_to_dyld_file,iredufmt=None):
                 rii = ri
 
             for i in range(nisotopes):
-                yields[rii,ni_newstart+i,0] = np.float(yvals[i])
-                if err_dyld_found: yields[rii,ni_newstart+i,1] = np.float(yvals_rerr[i])*yields[rii,ni_newstart+i,0]
+                yields[rii,ni_newstart+i,0] = float(yvals[i])
+                if err_dyld_found: yields[rii,ni_newstart+i,1] = float(yvals_rerr[i])*yields[rii,ni_newstart+i,0]
 
             ri += 1
 
