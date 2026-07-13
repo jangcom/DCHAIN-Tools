@@ -60,6 +60,50 @@ import unicodedata as ud
 #from  Hunters_tools import *
 # from munch import *
 
+try: # Jupyter/IPython's stdout doesn't honor a bare '\r' as an in-place overwrite like a real terminal does,
+     # so each write shows up as its own line there regardless; use clear_output(wait=True) instead in that case.
+    from IPython import get_ipython
+    from IPython.display import clear_output
+    _in_ipython = get_ipython() is not None
+except ImportError:
+    clear_output = None
+    _in_ipython = False
+
+_last_progress_line_len = 0 # tracks length of the last progress line written, so it can be fully overwritten
+
+def _print_progress(msg,verbose):
+    '''
+    Description:
+        Prints a parsing progress-report message by overwriting the previous one instead of appending
+        a new line each call, so long parses don't flood the console with one line per step/region/etc.
+        In a real terminal this is done with a carriage return; in Jupyter/IPython (where a bare '\\r'
+        doesn't overwrite) `IPython.display.clear_output` is used instead.
+    '''
+    global _last_progress_line_len
+    if not verbose: return
+    if _in_ipython:
+        clear_output(wait=True)
+        print(msg)
+        return
+    pad = max(0, _last_progress_line_len - len(msg))
+    sys.stdout.write('\r' + msg + ' '*pad)
+    sys.stdout.flush()
+    _last_progress_line_len = len(msg)
+
+def _end_progress(verbose):
+    '''
+    Description:
+        Terminates a run of `_print_progress` calls by moving the cursor to a fresh line, so
+        subsequent (non-progress) output doesn't overwrite the last progress message.
+    '''
+    global _last_progress_line_len
+    if _in_ipython:
+        return # each call already ended in its own clear_output()'d print(), nothing further needed
+    if verbose and _last_progress_line_len > 0:
+        sys.stdout.write('\n')
+        sys.stdout.flush()
+    _last_progress_line_len = 0
+
 
 def Dname_to_ZAM(Dname):
     '''
@@ -1343,7 +1387,7 @@ def generate_nuclide_time_profiles(nuclides_info_array):
     return nuclide_names, nuclide_Latex_names, nuclide_ZAM_vals, nuclide_half_lives, nuclide_info, nuclide_info_headers
 
 
-def parse_DCS_file_from_DCHAIN(filepath,relevancy_threshold=0.01,print_progress=False,nch_max=100):
+def parse_DCS_file_from_DCHAIN(filepath,relevancy_threshold=0.01,print_progress=False,nch_max=100,verbose=True):
     '''
     Description:
         Parse a decay chain information file produced by DCHAIN-SP
@@ -1364,6 +1408,7 @@ def parse_DCS_file_from_DCHAIN(filepath,relevancy_threshold=0.01,print_progress=
        - `print_progress` = logical variable denoting whether time and significant nuclide info will be printed while scanning file (D=`False`)
        - `nch_max` = maximum number of chains per isotope (D=`100`)
        - `relevancy_threshold` = what fraction of total activity must a nuclide contribute to be deemed relevant
+       - `verbose` = logical variable denoting whether the parsing progress report is printed to the console (D=`True`)
 
     Outputs:
 
@@ -1396,7 +1441,7 @@ def parse_DCS_file_from_DCHAIN(filepath,relevancy_threshold=0.01,print_progress=
     start = start_time
 
 
-    print('Processing the *.DCS decay chain file...     ({:0.2f} seconds elapsed)'.format(time.time()-start))
+    _print_progress('Processing the *.DCS decay chain file...     ({:0.2f} seconds elapsed)'.format(time.time()-start),verbose)
 
     # Extract text from file
     f = open(filepath)
@@ -1419,7 +1464,7 @@ def parse_DCS_file_from_DCHAIN(filepath,relevancy_threshold=0.01,print_progress=
             reg_nos.append(int(line[12:19]))
         if 'c<>-<>   region label :' in line:
             reg_labels.append(line[23:52].strip())
-    print('{} regions found...     ({:0.2f} seconds elapsed)'.format(n_reg,time.time()-start))
+    _print_progress('{} regions found...     ({:0.2f} seconds elapsed)'.format(n_reg,time.time()-start),verbose)
 
 
     # Then, scan for time steps.  Need all individual times from beginning and time of end of irradiation.
@@ -1451,9 +1496,9 @@ def parse_DCS_file_from_DCHAIN(filepath,relevancy_threshold=0.01,print_progress=
             break
     wtimes = np.array(wtimes)
 
-    pstr = '{} time steps found\nend of irradiation at t = {:g} sec ({})\nend of calculation at t = {:g} sec ({})...                ({:0.2f} seconds elapsed)'.format(
+    pstr = '{} time steps found; end of irradiation at t = {:g} sec ({}); end of calculation at t = {:g} sec ({})     ({:0.2f} seconds elapsed)'.format(
             ntsteps,end_of_irradiation_time,seconds_to_ydhms(end_of_irradiation_time),wtimes[-1],seconds_to_ydhms(wtimes[-1]),time.time()-start)
-    print(pstr)
+    _print_progress(pstr,verbose)
 
 
 
@@ -1482,10 +1527,10 @@ def parse_DCS_file_from_DCHAIN(filepath,relevancy_threshold=0.01,print_progress=
             chln = 1 + line.count(')->')
             if chln > chln_max: chln_max = chln
 
-    pstr =  '{} = maximum number of nuclides listed in a single time step\n'.format(nnuc_max)
-    pstr += '{} = highest index found of all relevant chains\n'.format(chni_max)
-    pstr += '{} = length of longest chain listed...                          ({:0.2f} seconds elapsed)'.format(chln_max,time.time()-start)
-    print(pstr)
+    pstr =  '{} = max nuclides in a single time step; '.format(nnuc_max)
+    pstr += '{} = highest relevant chain index; '.format(chni_max)
+    pstr += '{} = longest chain listed...                          ({:0.2f} seconds elapsed)'.format(chln_max,time.time()-start)
+    _print_progress(pstr,verbose)
 
 
     # Construct arrays to hold decay chain information
@@ -1574,13 +1619,13 @@ def parse_DCS_file_from_DCHAIN(filepath,relevancy_threshold=0.01,print_progress=
 
 
     # Now extract results from the data arrays
-    print('\nNow processing decay chain results...        ({:0.2f} seconds elapsed)'.format(time.time()-start))
+    _print_progress('Now processing decay chain results...        ({:0.2f} seconds elapsed)'.format(time.time()-start),verbose)
 
     notable_nuclides_AvT_by_region = [] # list of arrays (one per region) containing the time/inventory/activity data of relevant nuclides
     notable_nuclides_names_by_region = [] # list of lists (one per region) containing the relevant nuclides per region
 
     for ri in range(n_reg):
-        print('Region no. {} ({})'.format(reg_nos[ri],reg_labels[ri]))
+        _print_progress('Region no. {} ({})'.format(reg_nos[ri],reg_labels[ri]),verbose)
         relevant_nuclides = []
         for ti in range(ntsteps):
             t = wtimes[ti]
@@ -1654,6 +1699,7 @@ def parse_DCS_file_from_DCHAIN(filepath,relevancy_threshold=0.01,print_progress=
         notable_nuclides_names_by_region.append(relevant_nuclides)
         notable_nuclides_AvT_by_region.append(relv_nuc_inv)
 
+    _end_progress(verbose)
 
     return inventory, l_chains, prod_nuc, chn_indx, link_nuc, decay_mode, link_dN_info, end_of_irradiation_time, notable_nuclides_names_by_region, notable_nuclides_AvT_by_region
 
@@ -1952,7 +1998,7 @@ def parse_dyld_files(path_to_dyld_file,iredufmt=None):
     return yields, nuclide_names_yld
 
 
-def process_dchain_simulation_output(simulation_folder_path,simulation_basename,dtrk_filepath=None,dyld_filepath=None,process_DCS_file=False):
+def process_dchain_simulation_output(simulation_folder_path,simulation_basename,dtrk_filepath=None,dyld_filepath=None,process_DCS_file=False,verbose=True):
     '''
     Description:
         This is intended to be a single master function for processing DCHAIN output.
@@ -1966,6 +2012,7 @@ def process_dchain_simulation_output(simulation_folder_path,simulation_basename,
         - `dtrk_filepath` = file path to \*.dtrk file, only necessary if it has a different basename and there are multiple \*.dtrk files in the folder
         - `dyld_filepath` = file path to \*.dyld files, only necessary if it has a different basename and there are multiple \*.dyld files in the folder
         - `process_DCS_file` (optional) = Boolean variable specifying whether the DCS file should be processed too. (D=False)
+        - `verbose` (optional) = Boolean variable specifying whether the parsing progress report is printed to the console. (D=True)
 
     Outputs:
         - `dchain_output` = a dictionary object containing all information from DCHAIN's output files.  See the keys breakdown below.
@@ -2221,7 +2268,7 @@ def process_dchain_simulation_output(simulation_folder_path,simulation_basename,
     if dtrk_filepath: # DTRK file manually provided
         dtrk_file = dtrk_filepath
         if not os.path.exists(dtrk_file):
-            print('    Provided .dtrk file could not be found: {}'.format(dtrk_filepath))
+            _print_progress('    Provided .dtrk file could not be found: {}'.format(dtrk_filepath),verbose)
             process_dtrk_file = False
     else: # automatically find DTRK file
         dtrk_file = simulation_file_basic_path + '.dtrk'
@@ -2234,10 +2281,10 @@ def process_dchain_simulation_output(simulation_folder_path,simulation_basename,
                     valid_files.append(file)
                     valid_filepaths.append(os.path.join(simulation_folder_path, file))
             if len(valid_files)>0:
-                print('    Could not find default .dtrk file {}, using {} in same directory instead.'.format(simulation_basename + '.dtrk',valid_files[0]))
+                _print_progress('    Could not find default .dtrk file {}, using {} in same directory instead.'.format(simulation_basename + '.dtrk',valid_files[0]),verbose)
                 dtrk_file = valid_filepaths[0]
             else:
-                print('    No .dtrk files could not be found in provided simulation folder: {}'.format(simulation_folder_path))
+                _print_progress('    No .dtrk files could not be found in provided simulation folder: {}'.format(simulation_folder_path),verbose)
                 process_dtrk_file = False
 
     if process_dtrk_file:
@@ -2247,7 +2294,7 @@ def process_dchain_simulation_output(simulation_folder_path,simulation_basename,
     if dyld_filepath: # dyld file manually provided
         dyld_file = dyld_filepath
         if not os.path.exists(dyld_file):
-            print('    Provided .dyld file could not be found: {}'.format(dyld_filepath))
+            _print_progress('    Provided .dyld file could not be found: {}'.format(dyld_filepath),verbose)
             process_dyld_file = False
     else: # automatically find dyld file
         dyld_file = simulation_file_basic_path + '.dyld'
@@ -2260,13 +2307,13 @@ def process_dchain_simulation_output(simulation_folder_path,simulation_basename,
                     valid_files.append(file)
                     valid_filepaths.append(os.path.join(simulation_folder_path, file))
             if len(valid_files)>0:
-                print('    Could not find default .dyld file {}, using {} in same directory instead.'.format(simulation_basename + '.dyld',valid_files[0]))
+                _print_progress('    Could not find default .dyld file {}, using {} in same directory instead.'.format(simulation_basename + '.dyld',valid_files[0]),verbose)
                 dyld_file = valid_filepaths[0]
             else:
-                print('    No .dyld files could not be found in provided simulation folder: {}'.format(simulation_folder_path))
+                _print_progress('    No .dyld files could not be found in provided simulation folder: {}'.format(simulation_folder_path),verbose)
                 process_dyld_file = False
 
-    print('{:<50}     ({:0.2f} seconds elapsed)'.format('    Parsing DCHAIN activation file...',time.time()-start))
+    _print_progress('{:<50}     ({:0.2f} seconds elapsed)'.format('    Parsing DCHAIN activation file...',time.time()-start),verbose)
 
     parse_DCHAIN_act_file_OUTPUT = parse_DCHAIN_act_file(act_file)
     reg_nos           = parse_DCHAIN_act_file_OUTPUT[0]  # length R list of region numbers
@@ -2284,7 +2331,7 @@ def process_dchain_simulation_output(simulation_folder_path,simulation_basename,
     rt_summary_info_description = summary_info[3]  # list of length 12 containing descriptions of the above items [0='total gamma flux [#/s/cc]',1='total gamma energy flux [MeV/s/cc]',2='annihilation gamma flux [#/s/cc]',3='gamma current underflow [#/s]',4='gamma current overflow [#/s]',5='total activity [Bq/cc]',6='total decay heat [W/cc]',7='beta decay heat [W/cc]',8='gamma decay heat [W/cc]',9='alpha decay heat [W/cc]',10='activated atoms [#/cc]',11='total gamma dose rate [uSV/h*m^2]']
 
 
-    print('{:<50}     ({:0.2f} seconds elapsed)'.format('    Restructuring nuclide data table array...',time.time()-start))
+    _print_progress('{:<50}     ({:0.2f} seconds elapsed)'.format('    Restructuring nuclide data table array...',time.time()-start),verbose)
 
     generate_nuclide_time_profiles_OUTPUT = generate_nuclide_time_profiles(nuclides_produced)
     nuclide_names        = generate_nuclide_time_profiles_OUTPUT[0]  # List of length R of lists containing names of nuclides produced in each region
@@ -2337,7 +2384,7 @@ def process_dchain_simulation_output(simulation_folder_path,simulation_basename,
         # Control parameters
         relevancy_threshold=0.01 # fraction of total activity an isotope must be at any time step in DCS file to be placed in the "relevant" array
 
-        fcn_out = parse_DCS_file_from_DCHAIN(dcs_file,relevancy_threshold=relevancy_threshold)
+        fcn_out = parse_DCS_file_from_DCHAIN(dcs_file,relevancy_threshold=relevancy_threshold,verbose=verbose)
 
         # Notation for output array dimensions
         #   R (n_reg)    regions
@@ -2603,6 +2650,8 @@ def process_dchain_simulation_output(simulation_folder_path,simulation_basename,
     #     dchain_output = munchify(dchain_output)
     # except:
     #     print("munchify failed.  Returned object is a conventional dictionary rather than a munchify object.")
+
+    _end_progress(verbose)
 
     return dchain_output
 
